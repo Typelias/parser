@@ -4,6 +4,7 @@
 #include <memory>
 #include <iostream>
 #include "tokens.hpp"
+#include <string>
 
 struct ASTNode
 {
@@ -31,7 +32,7 @@ struct ManyNode : ASTNode
 struct GroupNode : ASTNode
 {
     int index;
-    GroupNode(int index): index(index) {}
+    GroupNode(int index) : index(index) {}
     void print() override
     {
         std::cout << "()";
@@ -49,6 +50,8 @@ struct WildcardNode : ASTNode
 struct CounterNode : ASTNode
 {
     int count;
+
+    CounterNode(int count) : count(count) {}
 
     void print() override
     {
@@ -120,6 +123,30 @@ private:
         }
 
         return std::make_unique<WildcardNode>();
+    }
+
+    std::unique_ptr<ASTNode> tryBuildCounter()
+    {
+        int checkpoint = currentToken;
+
+        auto operand = tryBuildOperand();
+
+        if (operand == nullptr)
+        {
+            return nullptr;
+        }
+
+        Token *t = getToken(Token::Type::Counter);
+
+        if (t == nullptr)
+        {
+            currentToken = checkpoint;
+            return nullptr;
+        }
+
+        auto counter = std::make_unique<CounterNode>(std::stoi(t->value));
+        counter->children.push_back(std::move(operand));
+        return counter;
     }
 
     std::unique_ptr<ASTNode> tryBuildMany()
@@ -198,26 +225,46 @@ private:
         }
     }
 
+    std::unique_ptr<ASTNode> tryBuildOperator()
+    {
+        auto p = tryBuildOr();
+        if (p != nullptr)
+        {
+            return p;
+        }
+        else if ((p = tryBuildMany()); p != nullptr)
+        {
+            return p;
+        }
+        else if ((p = tryBuildCounter()); p != nullptr)
+        {
+            return p;
+        }
+        else
+        {
+            return nullptr;
+        }
+    }
+
     std::unique_ptr<ASTNode> tryBuildGroup()
     {
         static int groupIndex = 1;
         int checkpoint = currentToken;
         auto t = getToken(Token::Type::OpenParan);
-        if (t == nullptr) {
+        if (t == nullptr)
+        {
             return nullptr;
         }
         auto group = std::make_unique<GroupNode>(groupIndex);
         while (tokens[currentToken].type != Token::Type::CloseParan)
         {
-            if(isEnd()) {
+            std::cout << tokens[currentToken] << "\n";
+            if (isEnd())
+            {
                 std::exit(EXIT_FAILURE);
             }
-            auto p = tryBuildMany();
+            auto p = tryBuildOperator();
             if (p != nullptr)
-            {
-                group->children.push_back(std::move(p));
-            }
-            else if ((p = tryBuildOr()); p != nullptr)
             {
                 group->children.push_back(std::move(p));
             }
@@ -229,13 +276,10 @@ private:
             {
                 std::exit(EXIT_FAILURE);
             }
-            
         }
         currentToken++;
         groupIndex++;
         return group;
-        
-
     }
 
     bool isEnd() const
@@ -268,13 +312,10 @@ public:
         {
             auto p = tryBuildGroup();
             if (p != nullptr)
-            { 
+            {
                 root->children.push_back(std::move(p));
             }
-            else if((p = tryBuildMany()); p!= nullptr) {
-                root->children.push_back(std::move(p));
-            }
-            else if ((p = tryBuildOr()); p != nullptr)
+            else if ((p = tryBuildOperator()); p != nullptr)
             {
                 root->children.push_back(std::move(p));
             }
