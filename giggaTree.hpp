@@ -30,6 +30,8 @@ struct ManyNode : ASTNode
 
 struct GroupNode : ASTNode
 {
+    int index;
+    GroupNode(int index): index(index) {}
     void print() override
     {
         std::cout << "()";
@@ -196,6 +198,46 @@ private:
         }
     }
 
+    std::unique_ptr<ASTNode> tryBuildGroup()
+    {
+        static int groupIndex = 1;
+        int checkpoint = currentToken;
+        auto t = getToken(Token::Type::OpenParan);
+        if (t == nullptr) {
+            return nullptr;
+        }
+        auto group = std::make_unique<GroupNode>(groupIndex);
+        while (tokens[currentToken].type != Token::Type::CloseParan)
+        {
+            if(isEnd()) {
+                std::exit(EXIT_FAILURE);
+            }
+            auto p = tryBuildMany();
+            if (p != nullptr)
+            {
+                group->children.push_back(std::move(p));
+            }
+            else if ((p = tryBuildOr()); p != nullptr)
+            {
+                group->children.push_back(std::move(p));
+            }
+            else if ((p = tryBuildOperand()); p != nullptr)
+            {
+                group->children.push_back(std::move(p));
+            }
+            else
+            {
+                std::exit(EXIT_FAILURE);
+            }
+            
+        }
+        currentToken++;
+        groupIndex++;
+        return group;
+        
+
+    }
+
     bool isEnd() const
     {
         return currentToken >= tokens.size();
@@ -224,9 +266,12 @@ public:
         std::unique_ptr<ASTNode> root = std::make_unique<RootNode>();
         while (!isEnd())
         {
-            auto p = tryBuildMany();
+            auto p = tryBuildGroup();
             if (p != nullptr)
-            {
+            { 
+                root->children.push_back(std::move(p));
+            }
+            else if((p = tryBuildMany()); p!= nullptr) {
                 root->children.push_back(std::move(p));
             }
             else if ((p = tryBuildOr()); p != nullptr)
