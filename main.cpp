@@ -22,8 +22,9 @@ void print(ASTNode *root)
 int main()
 {
     // std::string input = "lo* could.{3} (hej + du) \\I \\O{2}";
-    std::string input = "hej.*hej+tummel (greger+banan)greger.{3}";
+    //std::string input = "hej.*hej+tummel (greger+banan)\\O{1}satan\\I.{3}";
     //std::string input = "(hej+tummel{3})";
+    std::string input = "promise to (Love+Hate)\\I you\\O{1}";
 
     auto tokens = Tokenizer(input).getTokens();
 

@@ -5,6 +5,7 @@
 #include <iostream>
 #include "tokens.hpp"
 #include <string>
+#include <algorithm>
 
 struct ASTNode
 {
@@ -70,6 +71,8 @@ struct IgnoreNode : ASTNode
 struct GroupSelectorNode : ASTNode
 {
     int selction;
+
+    GroupSelectorNode(int selction) : selction(selction) {}
 
     void print() override
     {
@@ -246,6 +249,93 @@ private:
         }
     }
 
+    std::vector<std::unique_ptr<ASTNode>> tryBuildExpression()
+    {
+        std::vector<std::unique_ptr<ASTNode>> children;
+        while (!isEnd())
+        {
+            if (tokens[currentToken].type == Token::Type::Ignore || tokens[currentToken].type == Token::Type::GroupSelector)
+            {
+                break;
+            }
+            auto p = tryBuildGroup();
+            if (p != nullptr)
+            {
+                children.push_back(std::move(p));
+            }
+            else if ((p = tryBuildOperator()); p != nullptr)
+            {
+                children.push_back(std::move(p));
+            }
+            else if ((p = tryBuildOperand()); p != nullptr)
+            {
+                children.push_back(std::move(p));
+            }
+            else
+            {
+                std::exit(EXIT_FAILURE);
+            }
+        }
+
+        return children;
+    }
+
+    std::unique_ptr<ASTNode> tryBuildGroupSelector()
+    {
+        int checkpoint = currentToken;
+        auto isGroupeEnd = [](Token t)
+        { return t.type == Token::Type::CloseParan; };
+
+        auto stop = std::find_if(tokens.begin(), tokens.end(), isGroupeEnd);
+        if (stop == tokens.end())
+        {
+            currentToken = checkpoint;
+            return nullptr;
+        }
+        auto c = tryBuildExpression();
+        if (c.empty())
+        {
+            currentToken = checkpoint;
+            return nullptr;
+        }
+        auto p = getToken(Token::Type::GroupSelector);
+        if (p == nullptr)
+        {
+            currentToken = checkpoint;
+            return nullptr;
+        }
+
+        auto selector = std::make_unique<GroupSelectorNode>(std::stoi(p->value));
+        selector->children.insert(selector->children.end(),
+                                  std::make_move_iterator(c.begin()),
+                                  std::make_move_iterator(c.end()));
+
+        return selector;
+    }
+
+    std::unique_ptr<ASTNode> tryBuildIgnore()
+    {
+        int checkpoint = currentToken;
+        auto c = tryBuildExpression();
+        if (c.empty())
+        {
+            currentToken = checkpoint;
+            return nullptr;
+        }
+        auto p = getToken(Token::Type::Ignore);
+
+        if (p == nullptr)
+        {
+            currentToken = checkpoint;
+            return nullptr;
+        }
+        auto ignore = std::make_unique<IgnoreNode>();
+        ignore->children.insert(ignore->children.end(),
+                                std::make_move_iterator(c.begin()),
+                                std::make_move_iterator(c.end()));
+        return ignore;
+    }
+
     std::unique_ptr<ASTNode> tryBuildGroup()
     {
         static int groupIndex = 1;
@@ -258,7 +348,6 @@ private:
         auto group = std::make_unique<GroupNode>(groupIndex);
         while (tokens[currentToken].type != Token::Type::CloseParan)
         {
-            std::cout << tokens[currentToken] << "\n";
             if (isEnd())
             {
                 std::exit(EXIT_FAILURE);
@@ -308,20 +397,24 @@ public:
     std::unique_ptr<ASTNode> parse()
     {
         std::unique_ptr<ASTNode> root = std::make_unique<RootNode>();
+
         while (!isEnd())
         {
-            auto p = tryBuildGroup();
+            std::vector<std::unique_ptr<ASTNode>> c;
+            auto p = tryBuildIgnore();
             if (p != nullptr)
             {
                 root->children.push_back(std::move(p));
             }
-            else if ((p = tryBuildOperator()); p != nullptr)
+            else if ((p = tryBuildGroupSelector()); p != nullptr)
             {
                 root->children.push_back(std::move(p));
             }
-            else if ((p = tryBuildOperand()); p != nullptr)
+            else if ((c = tryBuildExpression()); !c.empty())
             {
-                root->children.push_back(std::move(p));
+                root->children.insert(root->children.end(),
+                                      std::make_move_iterator(c.begin()),
+                                      std::make_move_iterator(c.end()));
             }
             else
             {
