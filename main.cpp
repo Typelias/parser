@@ -41,4 +41,6 @@ int main()
 
     print(root.get());
     std::cout << "\n";
+
+    return EXIT_SUCCESS;
 }
