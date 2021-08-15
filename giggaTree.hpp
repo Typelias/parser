@@ -7,9 +7,15 @@
 #include <string>
 #include <algorithm>
 
+int currentChar = 0;
+int startingChar = 0;
+bool parentIsIgnore = false;
+bool visitedWhildcard = false;
+std::string text;
+
 struct ASTNode
 {
-    // EvalResult virtual evaluate() = 0;
+    virtual bool evaluate() = 0;
     std::vector<std::unique_ptr<ASTNode>> children;
     virtual void print() = 0;
 };
@@ -20,6 +26,32 @@ struct OrNode : ASTNode
     {
         std::cout << "+";
     }
+    bool evaluate() override
+    {
+        int checkpoint = currentChar;
+        bool lhsSuccsess = children.front()->evaluate();
+        int lhsEnd = currentChar;
+        currentChar = checkpoint;
+        bool rhsSuccess = children.back()->evaluate();
+        int rhsEnd = currentChar;
+        if (!lhsSuccsess && !rhsSuccess)
+        {
+            currentChar = lhsEnd > rhsEnd ? lhsEnd : rhsEnd;
+            return false;
+        }
+        if (lhsSuccsess && rhsSuccess)
+        {
+            currentChar = lhsEnd > rhsEnd ? lhsEnd : rhsEnd;
+            return true;
+        }
+        if (lhsSuccsess)
+        {
+            currentChar = lhsEnd;
+            return true;
+        }
+        currentChar = rhsEnd;
+        return true;
+    }
 };
 
 struct ManyNode : ASTNode
@@ -27,6 +59,38 @@ struct ManyNode : ASTNode
     void print() override
     {
         std::cout << "*";
+    }
+    bool evaluate() override
+    {
+        for (auto &c : children)
+        {
+            if (!c->evaluate())
+            {
+                return false;
+            }
+        }
+        if (visitedWhildcard)
+        {
+            currentChar = text.size();
+            visitedWhildcard = false;
+            return true;
+        }
+        char c = text[currentChar - 1];
+        if (currentChar >= text.size() || text[currentChar] != c)
+        {
+            return false;
+        }
+        while (currentChar != text.size())
+        {
+            if (text[currentChar] != c)
+            {
+                break;
+            }
+            currentChar++;
+        }
+
+        // std::cout << "\"" << text[currentChar] << "\"\n";
+        return true;
     }
 };
 
@@ -38,6 +102,7 @@ struct GroupNode : ASTNode
     {
         std::cout << "()";
     }
+    bool evaluate() override {}
 };
 
 struct WildcardNode : ASTNode
@@ -45,6 +110,16 @@ struct WildcardNode : ASTNode
     void print() override
     {
         std::cout << ".";
+    }
+    bool evaluate() override
+    {
+        if (currentChar >= text.size())
+        {
+            return false;
+        }
+        visitedWhildcard = true;
+        currentChar++;
+        return true;
     }
 };
 
@@ -58,6 +133,34 @@ struct CounterNode : ASTNode
     {
         std::cout << "{" << count << "}";
     }
+    bool evaluate() override
+    {
+        if (!children.front()->evaluate())
+        {
+            return false;
+        }
+        if (visitedWhildcard)
+        {
+            if (currentChar + count-1 >= text.size())
+            {
+                return false;
+            }
+            currentChar += count-1;
+            return true;
+        }
+        char c = text[currentChar - 1];
+        for (int i = 0; i < count; i++)
+        {
+            if (currentChar >= text.size())
+                return false;
+            if (text[currentChar] != c)
+            {
+                return false;
+            }
+            currentChar++;
+        }
+        return true;
+    }
 };
 
 struct IgnoreNode : ASTNode
@@ -66,18 +169,35 @@ struct IgnoreNode : ASTNode
     {
         std::cout << "\\I";
     }
+    bool evaluate() override
+    {
+        //std::cout <<"test\n";
+        parentIsIgnore = true;
+        for (auto &c : children)
+        {
+            if (!c->evaluate())
+            {
+                parentIsIgnore = false;
+                return false;
+            }
+        }
+        parentIsIgnore = false;
+        return true;
+    }
 };
 
 struct GroupSelectorNode : ASTNode
 {
     int selction;
 
-    GroupSelectorNode(int selction) : selction(selction) {}
+    //GroupSelectorNode(int selction) : selction(selction) {}
 
     void print() override
     {
         std::cout << "\\O{" << selction << "}";
     }
+
+    bool evaluate() override {}
 };
 
 struct StringNode : ASTNode
@@ -88,13 +208,63 @@ struct StringNode : ASTNode
     {
         std::cout << "\"" << value << "\"";
     }
+
+    bool evaluate() override
+    {
+        if (currentChar >= text.size())
+        {
+            return false;
+        }
+        for (int i = 0; i < value.size(); i++)
+        {
+            if (value[i] == text[currentChar])
+            {
+                currentChar++;
+            }
+            else if (parentIsIgnore)
+            {
+                if (tolower(value[i]) == tolower(text[currentChar]))
+                {
+                    currentChar++;
+                }
+                else
+                {
+                    return false;
+                }
+            }
+            else
+            {
+                return false;
+            }
+        }
+        return true;
+    }
 };
 
 struct RootNode : ASTNode
 {
     void print() override
     {
-        std::cout << "Groot";
+        std::cout << "Root";
+    }
+    bool evaluate() override
+    {
+    RETRY:
+        for (auto &c : children)
+        {
+            if (!c->evaluate())
+            {
+                currentChar++;
+                startingChar = currentChar;
+                if (startingChar >= text.size())
+                {
+                    return false;
+                }
+                goto RETRY;
+            }
+            // std::cout << "\"" << text[currentChar] << "\"\n";
+        }
+        return true;
     }
 };
 
@@ -292,23 +462,33 @@ private:
             currentToken = checkpoint;
             return nullptr;
         }
-        auto c = tryBuildExpression();
-        if (c.empty())
+
+        std::vector<std::unique_ptr<ASTNode>> c;
+        auto selector = std::make_unique<GroupSelectorNode>();
+        while (!isEnd())
         {
-            currentToken = checkpoint;
-            return nullptr;
+            if (tokens[currentToken].type == Token::Type::GroupSelector)
+                break;
+            auto p = tryBuildIgnore();
+            if (p != nullptr)
+            {
+                selector->children.push_back(std::move(p));
+            }
+            else if ((c = tryBuildExpression()); !c.empty())
+            {
+                selector->children.insert(selector->children.end(),
+                                          std::make_move_iterator(c.begin()),
+                                          std::make_move_iterator(c.end()));
+            }
         }
-        auto p = getToken(Token::Type::GroupSelector);
-        if (p == nullptr)
+        auto t = getToken(Token::Type::GroupSelector);
+        if (t == nullptr)
         {
             currentToken = checkpoint;
             return nullptr;
         }
 
-        auto selector = std::make_unique<GroupSelectorNode>(std::stoi(p->value));
-        selector->children.insert(selector->children.end(),
-                                  std::make_move_iterator(c.begin()),
-                                  std::make_move_iterator(c.end()));
+        selector->selction = std::stoi(t->value);
 
         return selector;
     }
@@ -401,12 +581,12 @@ public:
         while (!isEnd())
         {
             std::vector<std::unique_ptr<ASTNode>> c;
-            auto p = tryBuildIgnore();
+            auto p = tryBuildGroupSelector();
             if (p != nullptr)
             {
                 root->children.push_back(std::move(p));
             }
-            else if ((p = tryBuildGroupSelector()); p != nullptr)
+            else if ((p = tryBuildIgnore()); p != nullptr)
             {
                 root->children.push_back(std::move(p));
             }
