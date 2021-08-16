@@ -6,12 +6,21 @@
 #include "tokens.hpp"
 #include <string>
 #include <algorithm>
+#include <map>
 
 int currentChar = 0;
 int startingChar = 0;
 bool parentIsIgnore = false;
 bool visitedWhildcard = false;
 std::string text;
+
+struct GroupIndexe
+{
+    int start;
+    int end;
+};
+
+std::map<int, GroupIndexe> indexes;
 
 struct ASTNode
 {
@@ -46,6 +55,7 @@ struct OrNode : ASTNode
         }
         if (lhsSuccsess)
         {
+
             currentChar = lhsEnd;
             return true;
         }
@@ -96,13 +106,30 @@ struct ManyNode : ASTNode
 
 struct GroupNode : ASTNode
 {
+
     int index;
     GroupNode(int index) : index(index) {}
     void print() override
     {
         std::cout << "()";
     }
-    bool evaluate() override {}
+    bool evaluate() override
+    {
+        int start = currentChar;
+        for (auto &c : children)
+        {
+            if (!c->evaluate())
+            {
+                return false;
+            }
+        }
+        GroupIndexe i;
+        i.start = start;
+        i.end = currentChar;
+        indexes[index] = i;
+
+        return true;
+    }
 };
 
 struct WildcardNode : ASTNode
@@ -141,11 +168,11 @@ struct CounterNode : ASTNode
         }
         if (visitedWhildcard)
         {
-            if (currentChar + count-1 >= text.size())
+            if (currentChar + count - 1 >= text.size())
             {
                 return false;
             }
-            currentChar += count-1;
+            currentChar += count - 1;
             return true;
         }
         char c = text[currentChar - 1];
@@ -165,6 +192,7 @@ struct CounterNode : ASTNode
 
 struct IgnoreNode : ASTNode
 {
+
     void print() override
     {
         std::cout << "\\I";
@@ -197,7 +225,19 @@ struct GroupSelectorNode : ASTNode
         std::cout << "\\O{" << selction << "}";
     }
 
-    bool evaluate() override {}
+    bool evaluate() override
+    {
+        for (auto &c : children)
+        {
+            if (!c->evaluate())
+            {
+                return false;
+            }
+        }
+        startingChar = indexes[selction].start;
+        currentChar = indexes[selction].end;
+        return true;
+    }
 };
 
 struct StringNode : ASTNode
@@ -576,6 +616,9 @@ public:
 
     std::unique_ptr<ASTNode> parse()
     {
+        if (isEnd()) {
+            return nullptr;
+        }
         std::unique_ptr<ASTNode> root = std::make_unique<RootNode>();
 
         while (!isEnd())

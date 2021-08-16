@@ -47,19 +47,18 @@ int main(int argc, char** argv)
         std::cout << "[" << t << "]\t";
     }
     std::cout << "\n"; */
+    
 
     auto p = Parser(tokens);
-
+    
     auto root = p.parse();
-    //text = "Waterloo I was defeated, you won the war Waterloo promise to love you for ever more Waterloo couldn't escape if I wanted to Waterloo knowing my fate is to be with you Waterloo finally facing my Waterloo";
-    print(root.get());
-    std::cout << "\n";
-
     if (!root)
     {
         std::cerr << "Could not parse tree\n";
         return EXIT_FAILURE;
     }
+    print(root.get());
+    std::cout << "\n";
 
     auto success = root->evaluate();
 
@@ -73,7 +72,6 @@ int main(int argc, char** argv)
 
     while (success)
     {
-
         std::cout << std::string(text.begin() + i, text.begin() + startingChar);
         printColor(std::string(text.begin() + startingChar, text.begin() + currentChar));
         i = startingChar = currentChar;
