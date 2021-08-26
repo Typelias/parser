@@ -234,6 +234,12 @@ struct GroupSelectorNode : ASTNode
                 return false;
             }
         }
+        if(selction == 0) {
+            return true;
+        }
+        if(indexes.find(selction) == indexes.end()) {
+            std::exit(EXIT_FAILURE);
+        }
         startingChar = indexes[selction].start;
         currentChar = indexes[selction].end;
         return true;
