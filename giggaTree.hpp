@@ -12,6 +12,7 @@ int currentChar = 0;
 int startingChar = 0;
 bool parentIsIgnore = false;
 bool visitedWhildcard = false;
+bool hasBuiltGroupSelector = false;
 std::string text;
 
 struct GroupIndexe
@@ -24,6 +25,7 @@ std::map<int, GroupIndexe> indexes;
 
 struct ASTNode
 {
+    virtual ~ASTNode() = default;
     virtual bool evaluate() = 0;
     std::vector<std::unique_ptr<ASTNode>> children;
     virtual void print() = 0;
@@ -234,10 +236,12 @@ struct GroupSelectorNode : ASTNode
                 return false;
             }
         }
-        if(selction == 0) {
+        if (selction == 0)
+        {
             return true;
         }
-        if(indexes.find(selction) == indexes.end()) {
+        if (indexes.find(selction) == indexes.end())
+        {
             std::exit(EXIT_FAILURE);
         }
         startingChar = indexes[selction].start;
@@ -536,6 +540,8 @@ private:
 
         selector->selction = std::stoi(t->value);
 
+        hasBuiltGroupSelector = true;
+
         return selector;
     }
 
@@ -622,7 +628,8 @@ public:
 
     std::unique_ptr<ASTNode> parse()
     {
-        if (isEnd()) {
+        if (isEnd())
+        {
             return nullptr;
         }
         std::unique_ptr<ASTNode> root = std::make_unique<RootNode>();
